@@ -4,9 +4,12 @@ import com.iaperfumeadvisor.dto.response.ErrorResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 
@@ -21,6 +24,27 @@ public class GlobalExceptionHandler {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .map(fieldError -> fieldError.getField() + ": " + fieldError.getDefaultMessage())
                 .collect(Collectors.joining(", "));
+        ErrorResponse error = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .message(message)
+                .build();
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    // Request mal armada por el cliente (falta un header como X-Cart-Id, JSON invalido, un id
+    // que no es numero en la URL): es un 400, no un error del servidor.
+    @ExceptionHandler({
+            ServletRequestBindingException.class,
+            HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class
+    })
+    public ResponseEntity<ErrorResponse> handleMalformedRequest(Exception ex) {
+        String message = switch (ex) {
+            case HttpMessageNotReadableException e -> "Malformed request body";
+            case MethodArgumentTypeMismatchException e -> "Invalid value for parameter '" + e.getName() + "'";
+            default -> ex.getMessage();
+        };
         ErrorResponse error = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.BAD_REQUEST.value())
